@@ -34,7 +34,6 @@ def download_kaggle_dataset():
 
 if not os.path.exists('games.json'):
     download_kaggle_dataset()
-
 with open('games.json', 'r', encoding='utf-8') as file:
     data = json.load(file)
 
@@ -63,15 +62,15 @@ async def query(query_text: str = Query(..., description="Keywords to search for
         raise HTTPException(status_code=400, detail="Please type a query parameter.")
     
     query_text_processed = query_text.lower().strip()
-    query_vec = vectorizer.transform([query_text_processed])
-    
-    similarities = cosine_similarity(query_vec, X).flatten()
+    query_vector = vectorizer.transform([query_text_processed])
+    similarities = cosine_similarity(query_vector, X).flatten()
     
     # only get top 10 results
     indices = similarities.argsort()[-10:][::-1]
     indices = [i for i in indices if similarities[i] > 0]
 
     results = []
+
     for i in indices:
         results.append({
             'name': df.iloc[i]['name'],
