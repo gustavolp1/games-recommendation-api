@@ -57,12 +57,12 @@ class QueryResponse(BaseModel):
 # ------ queries ------
 
 @app.get("/query", response_model=dict)
-async def query(query_text: str = Query(..., description="Keywords to search for recommendations")):
-    if not query_text:
+async def query(query: str = Query(..., description="Keywords to search for recommendations")):
+    if not query:
         raise HTTPException(status_code=400, detail="Please type a query parameter.")
     
-    query_text_processed = query_text.lower().strip()
-    query_vector = vectorizer.transform([query_text_processed])
+    query_processed = query.lower().strip()
+    query_vector = vectorizer.transform([query_processed])
     similarities = cosine_similarity(query_vector, X).flatten()
     
     # only get top 10 results
