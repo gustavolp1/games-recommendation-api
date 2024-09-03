@@ -6,35 +6,61 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import uvicorn
+import json
+import os
+import subprocess
+import zipfile
+
+# ------ function to download dataset from Kaggle ------
+
+def download_kaggle_dataset():
+    print("Downloading the dataset...")
+    try:
+        kaggle_command = "kaggle"
+        subprocess.run([kaggle_command, "--version"], check=True)
+        subprocess.run(
+            [kaggle_command, "datasets", "download", "-d", "fronkongames/steam-games-dataset"],
+            check=True
+        )
+        with zipfile.ZipFile('steam-games-dataset.zip', 'r') as zip_ref:
+            zip_ref.extractall()
+        os.remove('steam-games-dataset.zip')
+        os.remove('games.csv')
+    except subprocess.CalledProcessError as e:
+        print("Failed to download the dataset:", e)
+        exit(1)
 
 # ------ csv and mild cleanup ------
 
-df = pd.read_csv('Video_Games_Sales_as_at_22_Dec_2016.csv')
+if not os.path.exists('games.json'):
+    download_kaggle_dataset()
 
-# clean up nan and null values
-df['Genre'] = df['Genre'].fillna('').str.lower().str.strip()
+with open('games.json', 'r', encoding='utf-8') as file:
+    data = json.load(file)
+
+df = pd.DataFrame.from_dict(data, orient='index')
 
 vectorizer = TfidfVectorizer()
-X = vectorizer.fit_transform(df['Genre'])
+X = vectorizer.fit_transform(df['detailed_description'])
 
 # ------ app section ------
 app = FastAPI()
 
 class QueryResponse(BaseModel):
-    title: str
-    platform: str
-    year_of_release: int
-    genre: str
-    publisher: str
-    global_sales: float
+    name: str
+    price: float
+    release_date: str
+    developers: str
+    genres: str
+    detailed_description: str
     relevance: float
 
 # ------ queries ------
 
 @app.get("/query", response_model=dict)
-async def query(query_text: str = Query(..., description="Genre to search for recommendations")):
+async def query(query_text: str = Query(..., description="Keywords to search for recommendations")):
     if not query_text:
-        raise HTTPException(status_code=400, detail="Query parameter is missing")
+        raise HTTPException(status_code=400, detail="Please type a query parameter.")
     
     query_text_processed = query_text.lower().strip()
     query_vec = vectorizer.transform([query_text_processed])
@@ -48,12 +74,12 @@ async def query(query_text: str = Query(..., description="Genre to search for re
     results = []
     for i in indices:
         results.append({
-            'title': df.iloc[i]['Name'],
-            'platform': df.iloc[i]['Platform'],
-            'year_of_release': int(df.iloc[i]['Year_of_Release']) if pd.notnull(df.iloc[i]['Year_of_Release']) else None,
-            'genre': df.iloc[i]['Genre'],
-            'publisher': df.iloc[i]['Publisher'],
-            'global_sales': df.iloc[i]['Global_Sales'],
+            'name': df.iloc[i]['name'],
+            'price': df.iloc[i]['price'],
+            'release_date': df.iloc[i]['release_date'],
+            'developers': df.iloc[i]['developers'],
+            'genres': df.iloc[i]['genres'],
+            'detailed_description': df.iloc[i]['detailed_description'],
             'relevance': float(similarities[i])
         })
     
