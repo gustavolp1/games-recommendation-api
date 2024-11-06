@@ -41,30 +41,18 @@ with open('games.json', 'r', encoding='utf-8') as file:
 
 df = pd.DataFrame.from_dict(data, orient='index')
 
-# ------ load or create embeddings with batch processing ------
+# ------ load existing embeddings ------
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-if os.path.exists('embeddings.pt'):
+if os.path.exists('pretrained_embeddings.pt'):
     print("Loading existing embeddings...")
-    embeddings = torch.load('embeddings.pt')
+    embeddings = torch.load('pretrained_embeddings.pt')
 else:
-    print("Generating new embeddings with batch processing...")
-    descriptions = df['detailed_description'].fillna("").tolist()
-    
-    batch_size = 32
-    embeddings = []
-    for i in range(0, len(descriptions), batch_size):
-        batch = descriptions[i:i+batch_size]
-        batch_embeddings = model.encode(batch, convert_to_tensor=True)
-        embeddings.append(batch_embeddings)
-        print(f"Processed batch {i // batch_size + 1} of {len(descriptions) // batch_size + 1}")
-    
-    embeddings = torch.cat(embeddings, dim=0)
-    torch.save(embeddings, 'embeddings.pt')
-    print("Embeddings generated and saved.")
+    raise FileNotFoundError("The embeddings file 'pretrained_embeddings.pt' does not exist. Please generate embeddings first.")
 
 # ------ app section ------
+
 app = FastAPI()
 
 class QueryResponse(BaseModel):

@@ -5,14 +5,42 @@ import numpy as np
 from tqdm import tqdm
 from openTSNE import TSNE
 import os
+import nltk
+from nltk.corpus import stopwords
+import re
+import string
+from sentence_transformers import SentenceTransformer
 
-def load_embeddings(file_path='pretrained_embeddings.pt'):
-    print("Loading embeddings from file...")
-    return torch.load(file_path)
+# Download stopwords
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+
+def preprocess_text(text):
+    text = text.lower()
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    text = " ".join([word for word in text.split() if word not in stop_words])
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def generate_embeddings(data, model_name='all-MiniLM-L6-v2', save_path='pretrained_embeddings.pt'):
+    print("Generating embeddings...")
+    model = SentenceTransformer(model_name)
+    embeddings = []
+    with tqdm(total=len(data), desc="Embedding Generation") as pbar:
+        for text in data:
+            embedding = model.encode(text, convert_to_tensor=True)
+            embeddings.append(embedding)
+            pbar.update(1)
+    embeddings = torch.stack(embeddings)
+    torch.save(embeddings, save_path)
+    print(f"Embeddings saved to {save_path}")
+    return embeddings
 
 def load_data(file_path='games.json'):
     print("Loading dataset from file...")
-    return pd.read_json(file_path, orient='index')
+    df = pd.read_json(file_path, orient='index')
+    df['detailed_description'] = df['detailed_description'].apply(preprocess_text)
+    return df
 
 def preprocess_labels(labels):
     processed_labels = []
@@ -23,7 +51,7 @@ def preprocess_labels(labels):
             processed_labels.append(label)
     return processed_labels
 
-def run_tsne(embeddings, cache_file='tsne_cache.npy'):
+def run_tsne(embeddings, cache_file='pretrained_tsne_cache.npy'):
     if os.path.exists(cache_file):
         print("Loading cached TSNE results...")
         embeddings_2d = np.load(cache_file)
@@ -70,8 +98,9 @@ def visualize_embeddings(embeddings_2d, labels=None, output_file='pretrained_emb
     plt.show()
 
 if __name__ == "__main__":
-    embeddings = load_embeddings('pretrained_embeddings.pt')
     df = load_data('games.json')
+    descriptions = df['detailed_description'].tolist()
+    embeddings = generate_embeddings(descriptions, save_path='pretrained_embeddings.pt')
     labels = df.get('genres').fillna("Unknown").tolist()
     embeddings_2d = run_tsne(embeddings, 'pretrained_tsne_cache.npy')
     visualize_embeddings(embeddings_2d, labels)

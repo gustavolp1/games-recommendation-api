@@ -1,3 +1,4 @@
+import string
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
@@ -7,6 +8,19 @@ from tqdm import tqdm
 from openTSNE import TSNE
 import os
 from sentence_transformers import SentenceTransformer
+from nltk.corpus import stopwords
+import nltk
+import re
+
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+
+def preprocess_text(text):
+    text = text.lower()
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    text = " ".join([word for word in text.split() if word not in stop_words])
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 def load_data(file_path='games.json'):
     print("Loading dataset from file...")
@@ -96,7 +110,7 @@ def visualize_embeddings(embeddings_2d, labels=None, output_file='finetuned_embe
 if __name__ == "__main__":
     model = SentenceTransformer('all-MiniLM-L6-v2')
     df = load_data('games.json')
-    descriptions = df['detailed_description'].fillna("").tolist()
+    descriptions = [preprocess_text(desc) for desc in df['detailed_description'].fillna("").tolist()]
 
     if os.path.exists('finetuned_embeddings.pt'):
         print("Loading existing fine-tuned embeddings...")
