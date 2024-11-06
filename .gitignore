@@ -1,2 +1,6 @@
 env
 games.json
+pretrained_embeddings.pt
+finetuned_embeddings.pt
+pretrained_tsne_cache.npy
+finetuned_tsne_cache.npy

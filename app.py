@@ -3,13 +3,15 @@
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
+import torch
 from sklearn.metrics.pairwise import cosine_similarity
 import uvicorn
 import json
 import os
 import subprocess
 import zipfile
+from sentence_transformers import SentenceTransformer
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # ------ function to download dataset from Kaggle ------
 
@@ -30,7 +32,7 @@ def download_kaggle_dataset():
         print("Failed to download the dataset:", e)
         exit(1)
 
-# ------ csv and mild cleanup ------
+# ------ load dataset ------
 
 if not os.path.exists('games.json'):
     download_kaggle_dataset()
@@ -39,8 +41,28 @@ with open('games.json', 'r', encoding='utf-8') as file:
 
 df = pd.DataFrame.from_dict(data, orient='index')
 
-vectorizer = TfidfVectorizer()
-X = vectorizer.fit_transform(df['detailed_description'])
+# ------ load or create embeddings with batch processing ------
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+if os.path.exists('embeddings.pt'):
+    print("Loading existing embeddings...")
+    embeddings = torch.load('embeddings.pt')
+else:
+    print("Generating new embeddings with batch processing...")
+    descriptions = df['detailed_description'].fillna("").tolist()
+    
+    batch_size = 32
+    embeddings = []
+    for i in range(0, len(descriptions), batch_size):
+        batch = descriptions[i:i+batch_size]
+        batch_embeddings = model.encode(batch, convert_to_tensor=True)
+        embeddings.append(batch_embeddings)
+        print(f"Processed batch {i // batch_size + 1} of {len(descriptions) // batch_size + 1}")
+    
+    embeddings = torch.cat(embeddings, dim=0)
+    torch.save(embeddings, 'embeddings.pt')
+    print("Embeddings generated and saved.")
 
 # ------ app section ------
 app = FastAPI()
@@ -60,12 +82,10 @@ class QueryResponse(BaseModel):
 async def query(query: str = Query(..., description="Keywords to search for recommendations")):
     if not query:
         raise HTTPException(status_code=400, detail="Please type a query parameter.")
-    
-    query_processed = query.lower().strip()
-    query_vector = vectorizer.transform([query_processed])
-    similarities = cosine_similarity(query_vector, X).flatten()
-    
-    # only get top 10 results
+
+    query_embedding = model.encode([query], convert_to_tensor=True)
+    similarities = cosine_similarity(query_embedding.cpu().numpy(), embeddings.cpu().numpy()).flatten()
+
     indices = similarities.argsort()[-10:][::-1]
     indices = [i for i in indices if similarities[i] > 0]
 
@@ -76,8 +96,8 @@ async def query(query: str = Query(..., description="Keywords to search for reco
             'name': df.iloc[i]['name'],
             'price': df.iloc[i]['price'],
             'release_date': df.iloc[i]['release_date'],
-            'developers': df.iloc[i]['developers'],
-            'genres': df.iloc[i]['genres'],
+            'developers': df.iloc[i].get('developers', ''),
+            'genres': df.iloc[i].get('genres', ''),
             'detailed_description': df.iloc[i]['detailed_description'],
             'relevance': float(similarities[i])
         })
@@ -87,4 +107,4 @@ async def query(query: str = Query(..., description="Keywords to search for reco
 # ------ main ------
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=2909)
+    uvicorn.run(app, host='0.0.0.0', port=2909, log_level="info")
